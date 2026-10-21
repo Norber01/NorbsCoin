@@ -19,7 +19,9 @@ export function createApp(deps: { rates: RateService; storage: EvidenceStorage }
 
   if (config.isProduction) {
     // Enforce HTTPS behind the TLS-terminating proxy.
-    app.use((req, res, next) => (req.secure ? next() : res.redirect(301, `https://${req.get('host')}${req.originalUrl}`)));
+    app.use((req, res, next) =>
+      req.secure || req.path === '/api/health' ? next() : res.redirect(301, `https://${req.get('host')}${req.originalUrl}`),
+    );
   }
   app.use(
     helmet({

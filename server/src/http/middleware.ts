@@ -70,6 +70,10 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   if ((err as { type?: string }).type === 'entity.too.large') {
     return res.status(413).json({ error: { code: 'too_large', message: 'Request body too large.' } });
   }
+  if ((err as { code?: string }).code === '23505') {
+    // Unique constraint raced past an application check (e.g. the same statement reference twice).
+    return res.status(409).json({ error: { code: 'duplicate', message: 'This conflicts with an existing record (duplicate reference).' } });
+  }
   console.error(`[error] ${req.method} ${req.path}`, err);
   res.status(500).json({ error: { code: 'internal', message: 'Something went wrong. Your data has not been lost; please try again.' } });
 }

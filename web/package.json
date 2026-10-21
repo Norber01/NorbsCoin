@@ -1,14 +1,14 @@
 {
-  "name": "web",
+  "name": "@norbscoin/web",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "NorbsCoin customer site and admin dashboard",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -16,5 +16,13 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
-  }
+  },
+  "dependencies": {
+    "decimal.js": "^10.6.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.4"
+  },
+  "private": true,
+  "type": "module"
 }

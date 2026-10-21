@@ -1,0 +1,32 @@
+# Local/dev-style stack. In production put a TLS-terminating reverse proxy (Caddy, nginx,
+# or your host's load balancer) in front of `app`, and use managed Postgres with backups.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: norbs
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-norbs}
+      POSTGRES_DB: norbscoin
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U norbs -d norbscoin"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://norbs:${POSTGRES_PASSWORD:-norbs}@db:5432/norbscoin
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  uploads:

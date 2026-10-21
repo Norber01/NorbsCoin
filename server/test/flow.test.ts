@@ -45,6 +45,14 @@ describe('rates and quotes', () => {
     expect(events.rows).toHaveLength(1);
   });
 
+  it('backs off a failing provider instead of retrying every tick', async () => {
+    const ctx = makeApp();
+    ctx.provider.fail = true;
+    await ctx.rates.refreshIfDue('RUB', 'GHS', 900);
+    await ctx.rates.refreshIfDue('RUB', 'GHS', 900);
+    expect(ctx.provider.calls).toBe(1);
+  });
+
   it('flags a stale rate and refuses to quote with it', async () => {
     const ctx = makeApp();
     await configureCorridor();

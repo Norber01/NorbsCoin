@@ -4,7 +4,7 @@
   "description": "NorbsCoin API, rate engine, jobs",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && rm -rf dist/db/migrations && cp -r src/db/migrations dist/db/migrations",
     "start": "node dist/index.js",
     "migrate": "tsx src/cli/migrate.ts",
     "create-admin": "tsx src/cli/createAdmin.ts",

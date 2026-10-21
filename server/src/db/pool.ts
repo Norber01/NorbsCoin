@@ -7,6 +7,8 @@ pg.types.setTypeParser(pg.types.builtins.INT8, (v) => v);
 pg.types.setTypeParser(pg.types.builtins.DATE, (v) => v);
 
 export const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 10 });
+// An idle client losing its connection (DB restart, failover) must not crash the process.
+pool.on('error', (err) => console.error('[db] idle client error', err.message));
 
 export type Db = pg.Pool | pg.PoolClient;
 

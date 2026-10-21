@@ -229,7 +229,8 @@ CREATE INDEX orders_status_idx ON orders(status, created_at DESC);
 CREATE INDEX orders_phone_idx ON orders(recipient_phone);
 CREATE INDEX orders_created_idx ON orders(created_at DESC);
 CREATE INDEX orders_transfer_ref_idx ON orders(lower(customer_transfer_reference));
-CREATE INDEX orders_verified_ref_idx ON orders(lower(verified_reference));
+-- A bank/statement reference can verify at most one order (race-proof duplicate-payment guard).
+CREATE UNIQUE INDEX orders_verified_ref_unique ON orders(lower(verified_reference)) WHERE verified_reference IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION orders_lock_agreed_terms() RETURNS trigger AS $$
 BEGIN

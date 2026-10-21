@@ -58,17 +58,25 @@ export class RateService {
   }
 
   private inflight = new Map<string, Promise<RateSnapshot | null>>();
+  private lastAttempt = new Map<string, number>();
 
-  /** Refreshes if the latest API fetch is older than minIntervalSeconds (single-flight). */
+  /**
+   * Refreshes if the latest successful fetch — and the latest attempt, so a failing provider
+   * is not hammered — is older than minIntervalSeconds. Single-flight per pair.
+   */
   async refreshIfDue(base: string, quote: string, minIntervalSeconds: number): Promise<void> {
+    const key = `${base}/${quote}`;
+    const now = this.now().getTime();
+    const attempted = this.lastAttempt.get(key);
+    if (attempted && now - attempted < minIntervalSeconds * 1000) return;
     const { rows } = await this.db.query<{ fetched_at: Date }>(
       `SELECT fetched_at FROM rate_snapshots WHERE base_currency = $1 AND quote_currency = $2 AND kind = 'api'
        ORDER BY fetched_at DESC LIMIT 1`,
       [base, quote],
     );
     const last = rows[0]?.fetched_at;
-    if (last && this.now().getTime() - new Date(last).getTime() < minIntervalSeconds * 1000) return;
-    const key = `${base}/${quote}`;
+    if (last && now - new Date(last).getTime() < minIntervalSeconds * 1000) return;
+    this.lastAttempt.set(key, now);
     let p = this.inflight.get(key);
     if (!p) {
       p = this.refresh(base, quote).finally(() => this.inflight.delete(key));
