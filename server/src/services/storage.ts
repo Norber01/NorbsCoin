@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from '../config.js';
+import type { Db } from '../db/pool.js';
 
 /**
  * Private evidence storage. The default implementation writes to a directory that is never
@@ -18,13 +19,12 @@ export class LocalDiskStorage implements EvidenceStorage {
   constructor(private readonly dir: string = config.storage.dir) {}
 
   private resolve(key: string): string {
-    if (!/^[a-f0-9]{2}\/[a-f0-9]{32}\.(jpg|png|pdf)$/.test(key)) throw new Error('Invalid storage key');
+    if (!KEY_PATTERN.test(key)) throw new Error('Invalid storage key');
     return path.join(this.dir, key);
   }
 
   async put(data: Buffer, ext: string): Promise<string> {
-    const id = crypto.randomBytes(16).toString('hex');
-    const key = `${id.slice(0, 2)}/${id}.${ext}`;
+    const key = newKey(ext);
     const file = this.resolve(key);
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     await fs.writeFile(file, data, { mode: 0o600, flag: 'wx' });
@@ -37,6 +37,46 @@ export class LocalDiskStorage implements EvidenceStorage {
 
   async delete(key: string): Promise<void> {
     await fs.rm(this.resolve(key), { force: true });
+  }
+}
+
+const KEY_PATTERN = /^[a-f0-9]{2}\/[a-f0-9]{32}\.(jpg|png|pdf)$/;
+
+function newKey(ext: string): string {
+  const id = crypto.randomBytes(16).toString('hex');
+  return `${id.slice(0, 2)}/${id}.${ext}`;
+}
+
+/** Stores evidence in PostgreSQL (private, backed up with the database). */
+export class DatabaseStorage implements EvidenceStorage {
+  constructor(private readonly db: Db) {}
+
+  async put(data: Buffer, ext: string): Promise<string> {
+    const key = newKey(ext);
+    await this.db.query('INSERT INTO evidence_blobs (storage_key, data) VALUES ($1, $2)', [key, data]);
+    return key;
+  }
+
+  async get(key: string): Promise<Buffer> {
+    if (!KEY_PATTERN.test(key)) throw new Error('Invalid storage key');
+    const { rows } = await this.db.query<{ data: Buffer }>('SELECT data FROM evidence_blobs WHERE storage_key = $1', [key]);
+    if (!rows[0]) throw new Error('Evidence not found');
+    return rows[0].data;
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.db.query('DELETE FROM evidence_blobs WHERE storage_key = $1', [key]);
+  }
+}
+
+export function createStorage(db: Db): EvidenceStorage {
+  switch (config.storage.backend) {
+    case 'disk':
+      return new LocalDiskStorage();
+    case 'db':
+      return new DatabaseStorage(db);
+    default:
+      throw new Error(`Unknown STORAGE_BACKEND ${config.storage.backend}`);
   }
 }
 

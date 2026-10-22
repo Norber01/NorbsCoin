@@ -443,3 +443,25 @@ describe('email outbox', () => {
     expect(sent).toEqual(expect.arrayContaining(['customer@example.test', 'ops@exchange.test']));
   });
 });
+
+describe('database evidence storage', () => {
+  beforeEach(resetDb);
+
+  it('stores, reads and deletes receipts privately in PostgreSQL', async () => {
+    const { DatabaseStorage } = await import('../src/services/storage.js');
+    const storage = new DatabaseStorage(pool);
+    const key = await storage.put(PNG, 'png');
+    expect((await storage.get(key)).equals(PNG)).toBe(true);
+    await storage.delete(key);
+    await expect(storage.get(key)).rejects.toThrow();
+    await expect(storage.get('../../etc/passwd')).rejects.toThrow(/Invalid/);
+  });
+
+  it('bootstraps the first owner only when no operators exist', async () => {
+    const { bootstrapOwner } = await import('../src/services/auth.js');
+    expect(await bootstrapOwner(pool, 'first@exchange.test', 'a-long-password-123')).toBe(true);
+    expect(await bootstrapOwner(pool, 'second@exchange.test', 'a-long-password-123')).toBe(false);
+    const { rows } = await pool.query(`SELECT email, role FROM admin_users`);
+    expect(rows).toEqual([{ email: 'first@exchange.test', role: 'owner' }]);
+  });
+});

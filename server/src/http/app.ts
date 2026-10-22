@@ -15,7 +15,7 @@ import { publicRoutes } from './routes/public.js';
 export function createApp(deps: { rates: RateService; storage: EvidenceStorage }) {
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', /^\d+$/.test(config.trustProxy) ? Number(config.trustProxy) : config.trustProxy);
+  app.set('trust proxy', config.trustProxy === 'true' ? true : /^\d+$/.test(config.trustProxy) ? Number(config.trustProxy) : config.trustProxy);
 
   if (config.isProduction) {
     // Enforce HTTPS behind the TLS-terminating proxy.

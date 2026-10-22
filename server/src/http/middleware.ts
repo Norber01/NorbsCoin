@@ -1,11 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
-import { MulterError } from 'multer';
 import { pool } from '../db/pool.js';
 import { AppError, forbidden, unauthorized } from '../lib/errors.js';
 import { can, getSession, type Permission, type SessionInfo } from '../services/auth.js';
 
-export const SESSION_COOKIE = 'nc_admin';
+// Firebase Hosting forwards only a cookie named __session to the backend, so use that name everywhere.
+export const SESSION_COOKIE = '__session';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -59,10 +59,6 @@ export function requirePermission(permission: Permission) {
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
   if (err instanceof AppError) {
     return res.status(err.status).json({ error: { code: err.code, message: err.message, details: err.details } });
-  }
-  if (err instanceof MulterError) {
-    const message = err.code === 'LIMIT_FILE_SIZE' ? 'The file is too large.' : 'Invalid upload.';
-    return res.status(400).json({ error: { code: 'invalid_upload', message } });
   }
   if ((err as { type?: string }).type === 'entity.parse.failed') {
     return res.status(400).json({ error: { code: 'invalid_json', message: 'Malformed request body.' } });

@@ -4,9 +4,9 @@
 import { pool, withTransaction } from '../db/pool.js';
 import { audit, SYSTEM } from '../services/audit.js';
 import { getSettings } from '../services/settings.js';
-import { LocalDiskStorage } from '../services/storage.js';
+import { createStorage } from '../services/storage.js';
 
-const storage = new LocalDiskStorage();
+const storage = createStorage(pool);
 const settings = await getSettings(pool);
 const days = settings.retention_days;
 const dryRun = process.argv.includes('--dry-run');

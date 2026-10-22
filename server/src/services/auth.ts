@@ -72,6 +72,15 @@ export async function createAdminUser(db: Db, params: { email: string; name: str
   }
 }
 
+/** Creates the first owner from config when no operator exists yet. Never touches existing users. */
+export async function bootstrapOwner(db: Db, email: string, password: string): Promise<boolean> {
+  if (!email || !password) return false;
+  const { rows } = await db.query<{ n: string }>('SELECT count(*) AS n FROM admin_users');
+  if (Number(rows[0].n) > 0) return false;
+  await createAdminUser(db, { email, name: 'Owner', password, role: 'owner' }, { type: 'system', label: 'bootstrap' });
+  return true;
+}
+
 export async function login(db: Db, email: string, password: string, meta: { ip?: string; userAgent?: string }) {
   const { rows } = await db.query<AdminUser>('SELECT * FROM admin_users WHERE email = lower($1)', [email]);
   const user = rows[0];

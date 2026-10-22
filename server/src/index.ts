@@ -6,15 +6,19 @@ import { startScheduler } from './jobs/scheduler.js';
 import { createRateProvider } from './rates/index.js';
 import { RateService } from './rates/rateService.js';
 import { createTransport } from './services/notifications.js';
-import { LocalDiskStorage } from './services/storage.js';
+import { bootstrapOwner } from './services/auth.js';
+import { createStorage } from './services/storage.js';
 
 if (config.isProduction && (!config.appSecret || config.appSecret.length < 32)) {
   throw new Error('APP_SECRET (32+ chars) is required in production');
 }
 
 await migrate(pool);
+if (await bootstrapOwner(pool, config.bootstrapOwner.email, config.bootstrapOwner.password)) {
+  console.log(`Created first owner account ${config.bootstrapOwner.email}`);
+}
 const rates = new RateService(pool, createRateProvider());
-const storage = new LocalDiskStorage();
+const storage = createStorage(pool);
 const app = createApp({ rates, storage });
 const stop = config.jobs.enabled ? startScheduler({ rates, transport: createTransport() }) : () => {};
 

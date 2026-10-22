@@ -29,6 +29,7 @@ export const config = {
     timeoutMs: Number(env('RATE_TIMEOUT_MS', '8000')),
   },
   storage: {
+    backend: env('STORAGE_BACKEND', 'disk'), // 'disk' | 'db'
     // Private directory outside any web root. Swap for object storage via storage.ts.
     dir: path.resolve(env('UPLOAD_DIR', path.join(process.cwd(), 'var', 'uploads'))),
     maxBytes: Number(env('UPLOAD_MAX_BYTES', String(5 * 1024 * 1024))),
@@ -38,6 +39,11 @@ export const config = {
     from: env('EMAIL_FROM', 'NorbsCoin <no-reply@localhost>'),
     smtpUrl: process.env.SMTP_URL ?? '',
     maxAttempts: Number(env('EMAIL_MAX_ATTEMPTS', '8')),
+  },
+  // Creates the first owner account at startup if there are no operators yet (hosts without a shell).
+  bootstrapOwner: {
+    email: process.env.BOOTSTRAP_OWNER_EMAIL ?? '',
+    password: process.env.BOOTSTRAP_OWNER_PASSWORD ?? '',
   },
   jobs: {
     enabled: env('JOBS_ENABLED', 'true') === 'true',

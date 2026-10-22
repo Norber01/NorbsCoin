@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import multer from 'multer';
 import { config } from '../../config.js';
 import { pool } from '../../db/pool.js';
 import { badRequest } from '../../lib/errors.js';
@@ -18,6 +17,7 @@ import { publicSettings } from '../../services/settings.js';
 import type { EvidenceStorage } from '../../services/storage.js';
 import { getCorridor } from '../../services/corridors.js';
 import { clientIp, limiter } from '../middleware.js';
+import { singleFileUpload } from '../upload.js';
 
 const currency = (v: unknown) => {
   const s = typeof v === 'string' ? v.toUpperCase() : '';
@@ -28,7 +28,6 @@ const text = (v: unknown, max = 200) => (typeof v === 'string' ? v.slice(0, max)
 
 export function publicRoutes(deps: { rates: RateService; storage: EvidenceStorage }) {
   const r = Router();
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.storage.maxBytes, files: 1, fields: 10 } });
 
   r.get('/config', limiter(1, 60), async (_req, res) => {
     const corridors = await listCorridors(pool);
@@ -117,12 +116,12 @@ export function publicRoutes(deps: { rates: RateService; storage: EvidenceStorag
     res.json({ order: await trackingView(pool, order) });
   });
 
-  r.post('/track/proof', limiter(10, 10), upload.single('file'), async (req, res) => {
+  r.post('/track/proof', limiter(10, 10), singleFileUpload('file', config.storage.maxBytes), async (req, res) => {
     const order = await submitProof(deps.storage, {
       reference: text(req.body?.reference, 20),
       token: text(req.body?.token, 100),
       transferReference: req.body?.transferReference,
-      file: req.file,
+      file: req.upload,
       ip: clientIp(req),
     });
     res.status(201).json({ order: await trackingView(pool, order) });
