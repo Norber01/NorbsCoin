@@ -86,6 +86,9 @@ the test run **drops and recreates** that database's schema.
 
 ## Deploying
 
+**Free test copy from your phone:** follow [docs/RENDER.md](docs/RENDER.md) (Render blueprint, no card needed).
+
+
 `Dockerfile` and `docker-compose.yml` are included; configuration is via environment variables
 (see `.env.example`). Run behind a TLS-terminating reverse proxy. The production checklist is in
 [docs/OPERATIONS.md](docs/OPERATIONS.md).
