@@ -1,0 +1,54 @@
+# Render Blueprint: a free test deployment (web service + PostgreSQL).
+# In Render: New → Blueprint → pick this repository. You will be asked for the
+# two BOOTSTRAP_OWNER_* values (your operator login). Everything else is automatic.
+#
+# Free-plan limits (fine for testing, NOT for real customers):
+# - the web service sleeps after ~15 min idle; the first request then takes ~30-60 s
+#   and background jobs (expiry, deadline alerts) only run while it is awake;
+# - the free database expires 30 days after creation;
+# - emails are written to the service log, not sent.
+
+databases:
+  - name: norbscoin-db
+    plan: free
+    region: frankfurt
+    databaseName: norbscoin
+    user: norbs
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: norbscoin
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: ccr-ce1dcded-hu6um4
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: norbscoin-db
+          property: connectionString
+      # Encrypts two-factor secrets. Generated once by Render; do not change it later.
+      - key: APP_SECRET
+        generateValue: true
+      # Your first operator account, created on first start. Password: 12+ characters.
+      - key: BOOTSTRAP_OWNER_EMAIL
+        sync: false
+      - key: BOOTSTRAP_OWNER_PASSWORD
+        sync: false
+      # No persistent disk on the free plan: keep receipts in the database.
+      - key: STORAGE_BACKEND
+        value: db
+      - key: EMAIL_TRANSPORT
+        value: log
+      - key: TRUST_PROXY
+        value: "true"
+      - key: RATE_PROVIDER
+        value: open_er_api

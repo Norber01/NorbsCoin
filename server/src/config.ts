@@ -14,7 +14,7 @@ export const config = {
   port: Number(env('PORT', '3000')),
   databaseUrl: env('DATABASE_URL', 'postgres://norbs:norbs@localhost:5432/norbscoin'),
   // Public base URL, used in email links (tracking pages).
-  publicBaseUrl: env('PUBLIC_BASE_URL', 'http://localhost:5173'),
+  publicBaseUrl: env('PUBLIC_BASE_URL', process.env.RENDER_EXTERNAL_URL ?? 'http://localhost:5173'),
   // Behind a reverse proxy / load balancer that terminates TLS.
   trustProxy: env('TRUST_PROXY', '1'),
   // Encrypts MFA secrets at rest. Must be set (32+ random chars) in production.
