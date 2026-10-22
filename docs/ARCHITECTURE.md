@@ -102,9 +102,10 @@ audit log, and enqueues notifications in the same transaction. Database CHECK co
 
 ## Extending
 
-* **New currency pair**: insert a `corridors` row + `fee_schedules` v1 (migration or SQL), add the
-  currency's minor units to `CURRENCY_DECIMALS`, add recipient validation for the destination country
-  and payment instructions in Settings. The reverse GHS → RUB corridor is already seeded, disabled.
+* **New currency pair**: add a migration inserting a disabled `corridors` row + `fee_schedules` v1
+  (see `004_ngn_xaf_corridors.sql`), add the currency's minor units to `CURRENCY_DECIMALS` /
+  `CURRENCY_INFO` (and `DECIMALS` in `web/src/lib/format.ts`), add its payout countries to
+  `domain/countries.ts`, then enter payment instructions and enable it in Settings.
 * **Automated payment confirmation**: add a webhook route from the payment partner that calls the same
   `verifyPayment()` with a system/partner actor, so all checks, history, audit and notifications still apply.
 * **Automated payouts**: replace the manual "start payout / complete" actions with a payout-provider

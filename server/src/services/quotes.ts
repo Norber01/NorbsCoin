@@ -1,5 +1,5 @@
 import type { Db } from '../db/pool.js';
-import { calculateQuote, parseAmount, D } from '../domain/money.js';
+import { calculateQuote, parseAmount, D, decimalsFor } from '../domain/money.js';
 import { badRequest, notFound, unavailable } from '../lib/errors.js';
 import type { RateService } from '../rates/rateService.js';
 import {
@@ -101,6 +101,7 @@ export async function getQuote(db: Db, id: string): Promise<Quote> {
 }
 
 export function presentQuote(q: Quote, corridor: Corridor, now: Date = new Date()) {
+  const r = (v: string) => new D(v).toFixed(decimalsFor(q.receive_currency));
   return {
     id: q.id,
     sendCurrency: q.send_currency,
@@ -112,10 +113,10 @@ export function presentQuote(q: Quote, corridor: Corridor, now: Date = new Date(
     rateTimestamp: q.rate_timestamp,
     feeRate: q.fee_rate,
     feeBasis: 'deducted_from_gross',
-    grossAmount: q.gross_amount,
-    feeAmount: q.fee_amount,
+    grossAmount: r(q.gross_amount),
+    feeAmount: r(q.fee_amount),
     otherFees: [] as { label: string; amount: string }[],
-    payoutAmount: q.payout_amount,
+    payoutAmount: r(q.payout_amount),
     createdAt: q.created_at,
     expiresAt: q.expires_at,
     expired: new Date(q.expires_at) <= now,

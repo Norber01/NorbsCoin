@@ -208,6 +208,10 @@ export function OrderDetail() {
               <dd>
                 {o.recipient_phone} <Copy value={o.recipient_phone} />
               </dd>
+              <dt>Country</dt>
+              <dd>
+                {o.recipient_country} · paid in {o.receive_currency}
+              </dd>
               <dt>Method</dt>
               <dd>{o.payout_method === 'mobile_money' ? 'Mobile money' : 'Bank transfer'}</dd>
               <dt>Pay to</dt>

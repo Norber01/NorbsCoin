@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { config } from '../../config.js';
+import { publicCountries } from '../../domain/countries.js';
+import { CURRENCY_INFO } from '../../domain/money.js';
 import { pool } from '../../db/pool.js';
 import { badRequest } from '../../lib/errors.js';
 import type { RateService } from '../../rates/rateService.js';
@@ -8,7 +10,6 @@ import {
   createOrder,
   customerCancel,
   findOrderForCustomer,
-  MOBILE_MONEY_PROVIDERS,
   submitProof,
   trackingView,
 } from '../../services/orders.js';
@@ -53,7 +54,8 @@ export function publicRoutes(deps: { rates: RateService; storage: EvidenceStorag
     res.json({
       corridors: items,
       settings: await publicSettings(pool),
-      mobileMoneyProviders: MOBILE_MONEY_PROVIDERS,
+      payoutCountries: publicCountries(),
+      currencies: CURRENCY_INFO,
       upload: { maxBytes: config.storage.maxBytes, types: ['image/jpeg', 'image/png', 'application/pdf'] },
     });
   });

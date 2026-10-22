@@ -1,8 +1,14 @@
+// ISO 4217 minor units; XAF has none. Keep in sync with server/src/domain/money.ts.
+const DECIMALS: Record<string, number> = { XAF: 0 };
+export const decimalsFor = (currency: string) => DECIMALS[currency] ?? 2;
+
+/** Formats an exact decimal string (no float maths), with the currency's own decimals. */
 export function money(amount: string | null | undefined, currency: string): string {
   if (amount === null || amount === undefined || amount === '') return '—';
+  const dp = decimalsFor(currency);
   const [int, frac = ''] = amount.split('.');
   const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  return `${grouped}${frac ? '.' + frac.padEnd(2, '0').slice(0, 2) : '.00'} ${currency}`;
+  return `${grouped}${dp ? '.' + frac.padEnd(dp, '0').slice(0, dp) : ''} ${currency}`;
 }
 
 /** Display a rate with 6 significant decimals, trimming trailing zeros. */

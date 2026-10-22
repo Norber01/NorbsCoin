@@ -206,7 +206,7 @@ export function Track() {
           {o.status === 'awaiting_payment' && <>Send your payment using the instructions below, then upload the receipt.</>}
           {o.status === 'proof_submitted' && <>We are checking that your payment arrived. No action needed.</>}
           {o.status === 'payment_verified' && <>Your payment is confirmed. Expected payout by {dateTime(o.payoutDueAt)}.</>}
-          {o.status === 'payout_processing' && <>We are sending the cedis to the recipient. Expected by {dateTime(o.payoutDueAt)}.</>}
+          {o.status === 'payout_processing' && <>We are sending the payout to the recipient. Expected by {dateTime(o.payoutDueAt)}.</>}
           {o.status === 'completed' && <>The payout has been sent.</>}
           {o.status === 'expired' && <>No payment proof arrived within the payment window. If you already paid, contact support with your reference.</>}
         </p>
@@ -323,6 +323,8 @@ export function Track() {
             <dl className="kv">
               <dt>Name</dt>
               <dd>{o.recipient.name}</dd>
+              <dt>Country</dt>
+              <dd>{config.payoutCountries[o.terms.receiveCurrency]?.find((c) => c.code === o.recipient.country)?.name ?? o.recipient.country}</dd>
               <dt>Phone</dt>
               <dd>{o.recipient.phone}</dd>
               <dt>Payout to</dt>

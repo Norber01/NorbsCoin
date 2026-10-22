@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config.js';
 import { pool, type Db } from '../db/pool.js';
+import { formatAmount } from '../domain/money.js';
 import { CUSTOMER_STATUS_LABEL, type OrderStatus } from '../domain/orderStatus.js';
 import { getSettings } from './settings.js';
 
@@ -70,10 +71,10 @@ export interface OrderForEmail {
 function summary(o: OrderForEmail): string {
   return [
     `Order reference: ${o.reference}`,
-    `You send: ${o.send_amount} ${o.send_currency}`,
-    `Exchange rate: 1 ${o.send_currency} = ${o.rate} ${o.receive_currency}`,
-    `Service fee: ${o.fee_amount} ${o.receive_currency}`,
-    `Recipient gets: ${o.payout_amount} ${o.receive_currency}`,
+    `You send: ${formatAmount(o.send_amount, o.send_currency)}`,
+    `Exchange rate: 1 ${o.send_currency} = ${Number(o.rate)} ${o.receive_currency}`,
+    `Service fee: ${formatAmount(o.fee_amount, o.receive_currency)}`,
+    `Recipient gets: ${formatAmount(o.payout_amount, o.receive_currency)}`,
   ].join('\n');
 }
 
@@ -109,7 +110,7 @@ export async function notifyCustomer(
     if (event === 'resubmission_requested') lines.push('Please upload a corrected payment proof using your tracking link.');
     if (event === 'payment_verified' && order.payout_due_at)
       lines.push(`Your payment is confirmed. Expected payout by ${order.payout_due_at.toISOString()}.`);
-    if (event === 'completed') lines.push(`Your payout of ${order.payout_amount} ${order.receive_currency} has been sent.`);
+    if (event === 'completed') lines.push(`Your payout of ${formatAmount(order.payout_amount, order.receive_currency)} has been sent.`);
     if (event === 'refunded' && order.refund_amount)
       lines.push(`A refund of ${order.refund_amount} ${order.refund_currency} was sent (reference ${order.refund_reference}).`);
     if (order.operator_message) lines.push('', `Message from us: ${order.operator_message}`);

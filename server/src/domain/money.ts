@@ -4,7 +4,16 @@ import { Decimal } from 'decimal.js';
 export const D = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 export type Dec = InstanceType<typeof D>;
 
-export const CURRENCY_DECIMALS: Record<string, number> = { RUB: 2, GHS: 2, USD: 2, EUR: 2 };
+// ISO 4217 minor units. XAF (Central African CFA franc) has none: amounts are whole francs.
+export const CURRENCY_DECIMALS: Record<string, number> = { RUB: 2, GHS: 2, NGN: 2, XAF: 0, USD: 2, EUR: 2 };
+
+/** Display names and minor units for the web app. */
+export const CURRENCY_INFO: Record<string, { name: string; decimals: number }> = {
+  RUB: { name: 'Russian ruble', decimals: 2 },
+  GHS: { name: 'Ghanaian cedi', decimals: 2 },
+  NGN: { name: 'Nigerian naira', decimals: 2 },
+  XAF: { name: 'Central African CFA franc', decimals: 0 },
+};
 
 export function decimalsFor(currency: string): number {
   const d = CURRENCY_DECIMALS[currency];
@@ -73,6 +82,12 @@ export function parseAmount(input: unknown, currency: string): Dec | null {
   const value = new D(text);
   if (value.decimalPlaces() > decimalsFor(currency)) return null;
   return value;
+}
+
+/** Amount text with the currency's own number of decimals, e.g. "1500 XAF", "12.50 GHS". */
+export function formatAmount(amount: string | null | undefined, currency: string): string {
+  if (amount === null || amount === undefined) return '—';
+  return `${new D(amount).toFixed(CURRENCY_DECIMALS[currency] ?? 2)} ${currency}`;
 }
 
 export function sumAmounts(values: (string | null)[]): string {

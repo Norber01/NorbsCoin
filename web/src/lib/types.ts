@@ -11,6 +11,15 @@ export interface PublicCorridor {
   payoutTerms: string;
 }
 
+export interface PayoutCountry {
+  code: string;
+  name: string;
+  dial: string;
+  phoneExample: string;
+  mobileMoneyProviders: string[];
+  bankAccountHint: string;
+}
+
 export interface PublicConfig {
   corridors: PublicCorridor[];
   settings: {
@@ -22,7 +31,8 @@ export interface PublicConfig {
     terms_version: string;
     terms_text: string;
   };
-  mobileMoneyProviders: string[];
+  payoutCountries: Record<string, PayoutCountry[]>;
+  currencies: Record<string, { name: string; decimals: number }>;
   upload: { maxBytes: number; types: string[] };
 }
 
@@ -89,6 +99,7 @@ export interface TrackingOrder {
   };
   recipient: {
     name: string;
+    country: string;
     phone: string;
     payoutMethod: string;
     mobileMoneyProvider: string | null;

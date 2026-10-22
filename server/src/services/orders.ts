@@ -1,7 +1,8 @@
 import type pg from 'pg';
 import { config } from '../config.js';
 import { withTransaction, type Db } from '../db/pool.js';
-import { D } from '../domain/money.js';
+import { countriesForCurrency, findCountry, normalizePhone } from '../domain/countries.js';
+import { D, decimalsFor, formatAmount } from '../domain/money.js';
 import {
   allowedTransitions,
   canTransition,
@@ -65,8 +66,6 @@ export interface Order extends OrderForEmail {
 // ---------------------------------------------------------------------------
 // Recipient validation
 // ---------------------------------------------------------------------------
-export const MOBILE_MONEY_PROVIDERS = ['MTN MoMo', 'Telecel Cash', 'AirtelTigo Money'] as const;
-
 export interface RecipientInput {
   recipientName?: unknown;
   recipientPhone?: unknown;
@@ -82,7 +81,7 @@ export interface RecipientInput {
 export interface Recipient {
   recipientName: string;
   recipientPhone: string;
-  recipientCountry: 'GH';
+  recipientCountry: string;
   payoutMethod: 'mobile_money' | 'bank_transfer';
   mobileMoneyProvider: string | null;
   bankName: string | null;
@@ -91,24 +90,25 @@ export interface Recipient {
   customerEmail: string | null;
 }
 
-/** Normalises Ghanaian numbers to E.164 (+233XXXXXXXXX). Accepts 0XXXXXXXXX, 233…, +233…. */
-export function normalizeGhanaPhone(raw: string): string | null {
-  const digits = raw.replace(/[\s()-]/g, '');
-  const m = /^(?:\+?233|0)([235]\d{8})$/.exec(digits);
-  return m ? `+233${m[1]}` : null;
-}
-
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
 
-export function validateRecipient(input: RecipientInput): Recipient {
+/** Validates receiving details for the corridor's receive currency (country-specific rules). */
+export function validateRecipient(input: RecipientInput, receiveCurrency: string): Recipient {
   const errors: Record<string, string> = {};
   const name = str(input.recipientName).replace(/\s+/g, ' ');
   if (name.length < 3 || name.length > 100 || !/^[\p{L}][\p{L} .'-]+$/u.test(name))
     errors.recipientName = "Enter the recipient's full name as registered on the account.";
-  const phone = normalizeGhanaPhone(str(input.recipientPhone));
-  if (!phone) errors.recipientPhone = 'Enter a valid Ghana phone number, e.g. 024 123 4567 or +233 24 123 4567.';
-  const country = str(input.recipientCountry || 'GH').toUpperCase();
-  if (country !== 'GH') errors.recipientCountry = 'Payouts are currently only available in Ghana.';
+  const options = countriesForCurrency(receiveCurrency);
+  const country = findCountry(str(input.recipientCountry || (options.length === 1 ? options[0].code : '')).toUpperCase());
+  let phone: string | null = null;
+  if (!country || country.currency !== receiveCurrency) {
+    errors.recipientCountry = options.length
+      ? `Choose the recipient's country (${options.map((c) => c.name).join(', ')}).`
+      : `Payouts in ${receiveCurrency} are not supported.`;
+  } else {
+    phone = normalizePhone(country, str(input.recipientPhone));
+    if (!phone) errors.recipientPhone = `Enter a valid ${country.name} phone number, e.g. ${country.phoneExample} or +${country.dial} ${country.phoneExample.replace(/^0/, '')}.`;
+  }
   const method = str(input.payoutMethod);
   let mobileMoneyProvider: string | null = null;
   let bankName: string | null = null;
@@ -116,13 +116,14 @@ export function validateRecipient(input: RecipientInput): Recipient {
   let bankBranch: string | null = null;
   if (method === 'mobile_money') {
     const p = str(input.mobileMoneyProvider);
-    if (!(MOBILE_MONEY_PROVIDERS as readonly string[]).includes(p)) errors.mobileMoneyProvider = 'Choose a mobile money provider.';
+    if (country && !country.mobileMoneyProviders.length) errors.payoutMethod = `Mobile money payouts are not available in ${country.name}; choose bank account.`;
+    else if (!country?.mobileMoneyProviders.includes(p)) errors.mobileMoneyProvider = 'Choose a mobile money provider.';
     else mobileMoneyProvider = p;
   } else if (method === 'bank_transfer') {
     bankName = str(input.bankName);
     if (bankName.length < 2 || bankName.length > 100) errors.bankName = 'Enter the bank name.';
-    bankAccountNumber = str(input.bankAccountNumber).replace(/\s/g, '');
-    if (!/^\d{6,20}$/.test(bankAccountNumber)) errors.bankAccountNumber = 'Account number must be 6–20 digits.';
+    bankAccountNumber = str(input.bankAccountNumber).replace(/[\s-]/g, '').toUpperCase();
+    if (country && !country.bankAccountPattern.test(bankAccountNumber)) errors.bankAccountNumber = `Account number: ${country.bankAccountHint}`;
     bankBranch = str(input.bankBranch) || null;
     if (bankBranch && bankBranch.length > 100) errors.bankBranch = 'Branch name is too long.';
   } else {
@@ -134,7 +135,7 @@ export function validateRecipient(input: RecipientInput): Recipient {
   return {
     recipientName: name,
     recipientPhone: phone!,
-    recipientCountry: 'GH',
+    recipientCountry: country!.code,
     payoutMethod: method as Recipient['payoutMethod'],
     mobileMoneyProvider,
     bankName,
@@ -222,7 +223,6 @@ export async function createOrder(
   now: Date = new Date(),
 ): Promise<{ order: Order; trackingToken: string; trackingUrl: string }> {
   if (params.termsAccepted !== true) throw badRequest('terms_not_accepted', 'You must accept the displayed terms to continue.');
-  const recipient = validateRecipient(params.recipient);
   if (!/^[0-9a-f-]{36}$/i.test(params.quoteId)) throw notFound('Quote not found');
 
   const result = await withTransaction(async (client) => {
@@ -234,6 +234,7 @@ export async function createOrder(
       throw conflict('quote_already_used', 'This quote has already been confirmed. Check your tracking link or email.');
     }
     if (new Date(quote.expires_at) <= now) throw new AppError(410, 'quote_expired', 'This quote has expired. Please get a new quote.');
+    const recipient = validateRecipient(params.recipient, quote.receive_currency);
 
     const settings = await getSettings(client);
     if (params.termsVersion !== settings.terms_version) {
@@ -303,8 +304,8 @@ export async function createOrder(
     await notifyCustomer(client, order, 'order_confirmed', { trackingUrl: url });
     await enqueueAdminEmail(client, {
       template: 'admin.new_order',
-      subject: `New order ${order.reference}: ${order.send_amount} ${order.send_currency} → ${order.payout_amount} ${order.receive_currency}`,
-      body: `A new exchange order was confirmed.\n\nReference: ${order.reference}\nSend: ${order.send_amount} ${order.send_currency}\nPayout: ${order.payout_amount} ${order.receive_currency}\nFee: ${order.fee_amount} ${order.receive_currency}\nFlags: ${order.flags.join(', ') || 'none'}`,
+      subject: `New order ${order.reference}: ${formatAmount(order.send_amount, order.send_currency)} → ${formatAmount(order.payout_amount, order.receive_currency)}`,
+      body: `A new exchange order was confirmed.\n\nReference: ${order.reference}\nSend: ${formatAmount(order.send_amount, order.send_currency)}\nPayout: ${formatAmount(order.payout_amount, order.receive_currency)} (${order.recipient_country})\nFee: ${formatAmount(order.fee_amount, order.receive_currency)}\nFlags: ${order.flags.join(', ') || 'none'}`,
       orderId: order.id,
       dedupeKey: `admin.new_order:${order.id}`,
     });
@@ -368,6 +369,7 @@ export async function trackingView(db: Db, order: Order) {
     getSettings(db),
   ]);
   const canUpload = canTransition(order.status, 'proof_submitted', 'customer');
+  const r = (v: string | null) => (v === null ? null : new D(v).toFixed(decimalsFor(order.receive_currency)));
   return {
     reference: order.reference,
     status: order.status,
@@ -383,14 +385,15 @@ export async function trackingView(db: Db, order: Order) {
       rateSource: order.rate_source,
       rateTimestamp: order.rate_timestamp,
       feeRate: order.fee_rate,
-      grossAmount: order.gross_amount,
-      feeAmount: order.fee_amount,
-      payoutAmount: order.payout_amount,
+      grossAmount: r(order.gross_amount),
+      feeAmount: r(order.fee_amount),
+      payoutAmount: r(order.payout_amount),
       termsVersion: order.terms_version,
       acceptedAt: order.terms_accepted_at,
     },
     recipient: {
       name: order.recipient_name,
+      country: order.recipient_country,
       phone: maskPhone(order.recipient_phone),
       payoutMethod: order.payout_method,
       mobileMoneyProvider: order.mobile_money_provider,
@@ -409,7 +412,7 @@ export async function trackingView(db: Db, order: Order) {
     timeline: history.rows.map((h) => ({ status: h.to_status, label: CUSTOMER_STATUS_LABEL[h.to_status], note: h.customer_note, at: h.created_at })),
     completion:
       order.status === 'completed'
-        ? { payoutAmount: order.payout_actual_amount, payoutReference: order.payout_reference, payoutDate: order.payout_date }
+        ? { payoutAmount: r(order.payout_actual_amount), payoutReference: order.payout_reference, payoutDate: order.payout_date }
         : null,
     refund:
       order.status === 'refunded'
@@ -581,7 +584,7 @@ export async function verifyPayment(
     await enqueueAdminEmail(client, {
       template: 'admin.payment_confirmed',
       subject: `Payment confirmed for ${order.reference} — payout due by ${updated.payout_due_at?.toISOString()}`,
-      body: `Payment of ${amount.toFixed(2)} ${order.send_currency} verified (ref ${reference}) by ${actor.label}.\nPay ${order.payout_amount} ${order.receive_currency} to the recipient.`,
+      body: `Payment of ${amount.toFixed(2)} ${order.send_currency} verified (ref ${reference}) by ${actor.label}.\nPay ${formatAmount(order.payout_amount, order.receive_currency)} to the recipient.`,
       orderId: order.id,
       dedupeKey: `admin.verified:${order.id}`,
     });
@@ -692,8 +695,10 @@ export async function completePayout(
   return withTransaction(async (client) => {
     const order = await lockOrder(client, orderId);
     if (!order.verified_at) throw conflict('payment_unverified', 'Cannot complete an order whose payment is unverified.');
+    if (actual.decimalPlaces() > decimalsFor(order.receive_currency))
+      throw badRequest('invalid_amount', `${order.receive_currency} amounts have ${decimalsFor(order.receive_currency)} decimal places.`);
     if (!actual.eq(order.payout_amount) && !note)
-      throw badRequest('discrepancy_note_required', `Actual payout differs from the agreed ${order.payout_amount} ${order.receive_currency}. Explain the discrepancy.`);
+      throw badRequest('discrepancy_note_required', `Actual payout differs from the agreed ${formatAmount(order.payout_amount, order.receive_currency)}. Explain the discrepancy.`);
     const flags = new Set(order.flags);
     if (!actual.eq(order.payout_amount)) flags.add('payout_discrepancy');
     const updated = await transition(client, order, 'completed', actor, {
@@ -701,7 +706,7 @@ export async function completePayout(
       reason: note,
       customerNote: 'Your payout has been sent.',
       patch: {
-        payout_actual_amount: actual.toFixed(2),
+        payout_actual_amount: actual.toFixed(decimalsFor(order.receive_currency)),
         payout_reference: reference,
         payout_date: date,
         payout_discrepancy_note: note,
@@ -714,7 +719,7 @@ export async function completePayout(
     await enqueueAdminEmail(client, {
       template: 'admin.payout_completed',
       subject: `Payout completed for ${order.reference}`,
-      body: `${actor.label} paid ${actual.toFixed(2)} ${order.receive_currency} (ref ${reference}) on ${date}.${note ? `\nDiscrepancy: ${note}` : ''}`,
+      body: `${actor.label} paid ${formatAmount(actual.toFixed(), order.receive_currency)} (ref ${reference}) on ${date}.${note ? `\nDiscrepancy: ${note}` : ''}`,
       orderId: order.id,
       dedupeKey: `admin.completed:${order.id}`,
     });
@@ -814,7 +819,7 @@ export async function checkPayoutDeadlines(now: Date = new Date()): Promise<{ wa
       await enqueueAdminEmail(client, {
         template: 'admin.payout_due_soon',
         subject: `Payout due soon: ${o.reference} by ${o.payout_due_at?.toISOString()}`,
-        body: `Pay ${o.payout_amount} ${o.receive_currency} for ${o.reference} before ${o.payout_due_at?.toISOString()} to meet the promised timeframe.`,
+        body: `Pay ${formatAmount(o.payout_amount, o.receive_currency)} for ${o.reference} before ${o.payout_due_at?.toISOString()} to meet the promised timeframe.`,
         orderId: o.id,
         dedupeKey: `admin.payout_due:${o.id}`,
       });

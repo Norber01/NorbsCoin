@@ -5,7 +5,7 @@ import { Countdown, ErrorAlert, Field, isApiError, Spinner } from '../components
 import { api, ApiError } from '../lib/api';
 import { dateTime } from '../lib/format';
 import { useAsync, useConfig } from '../lib/hooks';
-import type { Quote } from '../lib/types';
+import type { PayoutCountry, Quote } from '../lib/types';
 
 type Step = 'quote' | 'recipient' | 'review';
 
@@ -24,7 +24,7 @@ interface RecipientForm {
 const EMPTY: RecipientForm = {
   recipientName: '',
   recipientPhone: '',
-  recipientCountry: 'GH',
+  recipientCountry: '',
   payoutMethod: 'mobile_money',
   mobileMoneyProvider: '',
   bankName: '',
@@ -44,17 +44,21 @@ function loadDraft(): RecipientForm {
   }
 }
 
-/** Client-side checks for fast feedback; the server re-validates everything. */
-function validate(f: RecipientForm): Record<string, string> {
+/**
+ * Client-side checks for fast feedback. Exact country rules (phone format, account format)
+ * are enforced by the server, whose field errors are shown on the same inputs.
+ */
+function validate(f: RecipientForm, country: PayoutCountry | undefined): Record<string, string> {
   const e: Record<string, string> = {};
   if (f.recipientName.trim().length < 3) e.recipientName = "Enter the recipient's full name as registered on the account.";
-  if (!/^(?:\+?233|0)[235]\d{8}$/.test(f.recipientPhone.replace(/[\s()-]/g, '')))
-    e.recipientPhone = 'Enter a valid Ghana phone number, e.g. 024 123 4567.';
+  if (!country) e.recipientCountry = "Choose the recipient's country.";
+  const digits = f.recipientPhone.replace(/\D/g, '');
+  if (digits.length < 8 || digits.length > 15) e.recipientPhone = `Enter a valid phone number${country ? `, e.g. ${country.phoneExample}` : ''}.`;
   if (!f.payoutMethod) e.payoutMethod = 'Choose how the recipient will be paid.';
   if (f.payoutMethod === 'mobile_money' && !f.mobileMoneyProvider) e.mobileMoneyProvider = 'Choose a mobile money provider.';
   if (f.payoutMethod === 'bank_transfer') {
     if (f.bankName.trim().length < 2) e.bankName = 'Enter the bank name.';
-    if (!/^\d{6,20}$/.test(f.bankAccountNumber.replace(/\s/g, ''))) e.bankAccountNumber = 'Account number must be 6–20 digits.';
+    if (f.bankAccountNumber.replace(/[\s-]/g, '').length < 6) e.bankAccountNumber = `Enter the account number${country ? ` (${country.bankAccountHint})` : ''}.`;
   }
   if (f.customerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.customerEmail)) e.customerEmail = 'Enter a valid email address.';
   return e;
@@ -101,6 +105,15 @@ export function Exchange() {
 
   useEffect(() => setExpired(!!quote.data?.expired), [quote.data]);
 
+  // Keep the chosen country valid for this quote's receive currency.
+  const countries: PayoutCountry[] = quote.data ? (config.payoutCountries[quote.data.receiveCurrency] ?? []) : [];
+  useEffect(() => {
+    if (!quote.data) return;
+    if (!countries.some((c) => c.code === form.recipientCountry)) {
+      setForm((f) => ({ ...f, recipientCountry: countries.length === 1 ? countries[0].code : '', mobileMoneyProvider: '' }));
+    }
+  }, [quote.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (quote.loading) return <Spinner label="Loading your quote…" />;
   if (quote.error) return <div className="narrow stack"><ErrorAlert error={quote.error} /><Link to="/">Start again</Link></div>;
   const q = quote.data!;
@@ -124,9 +137,11 @@ export function Exchange() {
     }
   }
 
+  const country = countries.find((c) => c.code === form.recipientCountry);
+
   function toReview(e: React.FormEvent) {
     e.preventDefault();
-    const errs = validate(form);
+    const errs = validate(form, country);
     setErrors(errs);
     if (Object.keys(errs).length === 0) setStep('review');
   }
@@ -222,21 +237,47 @@ export function Exchange() {
           <Field label="Recipient full name" htmlFor="recipientName" error={errors.recipientName} hint="As registered on the mobile money or bank account.">
             <input id="recipientName" autoComplete="name" value={form.recipientName} onChange={set('recipientName')} aria-invalid={!!errors.recipientName} />
           </Field>
-          <Field label="Recipient phone number" htmlFor="recipientPhone" error={errors.recipientPhone} hint="Ghana number, e.g. 024 123 4567 or +233 24 123 4567.">
-            <input id="recipientPhone" type="tel" autoComplete="tel" value={form.recipientPhone} onChange={set('recipientPhone')} aria-invalid={!!errors.recipientPhone} />
-          </Field>
-          <Field label="Country" htmlFor="recipientCountry">
-            <select id="recipientCountry" value={form.recipientCountry} onChange={set('recipientCountry')}>
-              <option value="GH">Ghana</option>
+          <Field label="Country" htmlFor="recipientCountry" error={errors.recipientCountry}>
+            <select
+              id="recipientCountry"
+              value={form.recipientCountry}
+              onChange={(e) => {
+                const next = countries.find((c) => c.code === e.target.value);
+                setForm({
+                  ...form,
+                  recipientCountry: e.target.value,
+                  mobileMoneyProvider: '',
+                  payoutMethod: next && !next.mobileMoneyProviders.length ? 'bank_transfer' : form.payoutMethod,
+                });
+                setErrors({ ...errors, recipientCountry: '', recipientPhone: '' });
+              }}
+              aria-invalid={!!errors.recipientCountry}
+            >
+              {countries.length !== 1 && <option value="">Select…</option>}
+              {countries.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.name}
+                </option>
+              ))}
             </select>
+          </Field>
+          <Field
+            label="Recipient phone number"
+            htmlFor="recipientPhone"
+            error={errors.recipientPhone}
+            hint={country ? `${country.name} number, e.g. ${country.phoneExample} or +${country.dial} ${country.phoneExample.replace(/^0/, '')}.` : 'Choose the country first.'}
+          >
+            <input id="recipientPhone" type="tel" autoComplete="tel" value={form.recipientPhone} onChange={set('recipientPhone')} aria-invalid={!!errors.recipientPhone} />
           </Field>
           <div className="field">
             <label>Payout method</label>
             <div className="choice-group" role="radiogroup">
-              <label className="choice">
-                <input type="radio" name="payoutMethod" value="mobile_money" checked={form.payoutMethod === 'mobile_money'} onChange={set('payoutMethod')} />
-                Mobile money
-              </label>
+              {(!country || country.mobileMoneyProviders.length > 0) && (
+                <label className="choice">
+                  <input type="radio" name="payoutMethod" value="mobile_money" checked={form.payoutMethod === 'mobile_money'} onChange={set('payoutMethod')} />
+                  Mobile money
+                </label>
+              )}
               <label className="choice">
                 <input type="radio" name="payoutMethod" value="bank_transfer" checked={form.payoutMethod === 'bank_transfer'} onChange={set('payoutMethod')} />
                 Bank account
@@ -248,7 +289,7 @@ export function Exchange() {
             <Field label="Mobile money provider" htmlFor="mobileMoneyProvider" error={errors.mobileMoneyProvider} hint="The phone number above must be registered with this provider.">
               <select id="mobileMoneyProvider" value={form.mobileMoneyProvider} onChange={set('mobileMoneyProvider')} aria-invalid={!!errors.mobileMoneyProvider}>
                 <option value="">Select…</option>
-                {config.mobileMoneyProviders.map((p) => (
+                {(country?.mobileMoneyProviders ?? []).map((p) => (
                   <option key={p}>{p}</option>
                 ))}
               </select>
@@ -259,8 +300,8 @@ export function Exchange() {
               <Field label="Bank name" htmlFor="bankName" error={errors.bankName}>
                 <input id="bankName" value={form.bankName} onChange={set('bankName')} aria-invalid={!!errors.bankName} />
               </Field>
-              <Field label="Account number" htmlFor="bankAccountNumber" error={errors.bankAccountNumber}>
-                <input id="bankAccountNumber" inputMode="numeric" value={form.bankAccountNumber} onChange={set('bankAccountNumber')} aria-invalid={!!errors.bankAccountNumber} />
+              <Field label="Account number" htmlFor="bankAccountNumber" error={errors.bankAccountNumber} hint={country?.bankAccountHint}>
+                <input id="bankAccountNumber" inputMode={country?.code === 'NG' || country?.code === 'GH' ? 'numeric' : 'text'} value={form.bankAccountNumber} onChange={set('bankAccountNumber')} aria-invalid={!!errors.bankAccountNumber} />
               </Field>
               <Field label="Branch (optional)" htmlFor="bankBranch" error={errors.bankBranch}>
                 <input id="bankBranch" value={form.bankBranch} onChange={set('bankBranch')} />
@@ -296,6 +337,8 @@ export function Exchange() {
             <dl className="kv">
               <dt>Name</dt>
               <dd>{form.recipientName}</dd>
+              <dt>Country</dt>
+              <dd>{country?.name}</dd>
               <dt>Phone</dt>
               <dd>{form.recipientPhone}</dd>
               <dt>Payout to</dt>

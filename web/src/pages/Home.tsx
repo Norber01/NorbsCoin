@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ErrorAlert, Spinner } from '../components/ui';
 import { api } from '../lib/api';
 import { cleanAmount, estimate } from '../lib/estimate';
-import { dateTime, money, percent, rate as fmtRate, relative } from '../lib/format';
+import { dateTime, decimalsFor, money, percent, rate as fmtRate, relative } from '../lib/format';
 import { useAsync, useConfig } from '../lib/hooks';
 import type { Quote, RateInfo } from '../lib/types';
 
@@ -33,6 +33,16 @@ export function Home() {
   }, [from, to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const amount = cleanAmount(amountText);
+  const allReceive = [...new Set(corridors.map((c) => c.to))];
+  const CURRENCY_WORD: Record<string, string> = { GHS: 'cedis', NGN: 'naira', XAF: 'CFA francs' };
+  const joinWords = (w: string[]) => (w.length <= 1 ? w.join('') : `${w.slice(0, -1).join(', ')} or ${w.at(-1)}`);
+  const receiveWords = joinWords(allReceive.map((c) => CURRENCY_WORD[c] ?? c));
+  const countryWords = joinWords(
+    allReceive.map((c) => {
+      const countries = config.payoutCountries[c] ?? [];
+      return countries.length === 1 ? `${c} in ${countries[0].name}` : `${c} (${config.currencies[c]?.name ?? c})`;
+    }),
+  );
   const amountError = useMemo(() => {
     if (!amountText.trim()) return 'Enter an amount.';
     if (!amount) return 'Enter a valid amount (up to 2 decimals).';
@@ -42,7 +52,7 @@ export function Home() {
   }, [amountText, amount, corridor, from]);
 
   const r = rate.data;
-  const est = r?.usable && r.rate && r.feeRate && amount && !amountError ? estimate(amount, r.rate, r.feeRate) : null;
+  const est = r?.usable && r.rate && r.feeRate && amount && !amountError ? estimate(amount, r.rate, r.feeRate, decimalsFor(to)) : null;
   const canQuote = !!est && !!corridor?.available && !submitting;
 
   async function refresh() {
@@ -76,9 +86,9 @@ export function Home() {
     <div className="grid-2 home">
       <section>
         <div className="hero">
-          <h1>Send rubles, receive cedis.</h1>
+          <h1>Send rubles, receive {receiveWords}.</h1>
           <p className="muted">
-            Exchange RUB for GHS paid to mobile money or a bank account in Ghana. See the exact rate, our {percent(corridor?.feeRate)} fee and
+            Exchange RUB to {countryWords} — paid to mobile money or a bank account. See the exact rate, our {percent(corridor?.feeRate)} fee and
             the amount your recipient receives before you commit.
           </p>
         </div>
@@ -136,7 +146,9 @@ export function Home() {
             <span>{est ? money(est.payout, to).replace(` ${to}`, '') : '—'}</span>
             <select aria-label="Receive currency" value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 'auto', border: 0, fontWeight: 600, background: 'transparent' }}>
               {receiveOptions.map((c) => (
-                <option key={c}>{c}</option>
+                <option key={c} value={c} title={config.currencies[c]?.name}>
+                  {c}
+                </option>
               ))}
             </select>
           </div>

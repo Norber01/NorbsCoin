@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { canTransition } from '../src/domain/orderStatus.js';
-import { normalizeGhanaPhone, validateRecipient } from '../src/services/orders.js';
+import { findCountry, normalizePhone } from '../src/domain/countries.js';
+import { calculateQuote } from '../src/domain/money.js';
+import { validateRecipient } from '../src/services/orders.js';
 import { sniffMime } from '../src/services/storage.js';
 import { base32Encode, hotp, matchTotpStep, totp } from '../src/services/totp.js';
 
@@ -29,16 +31,55 @@ describe('order state machine', () => {
 });
 
 describe('recipient validation', () => {
+  const phone = (code: string, raw: string) => normalizePhone(findCountry(code)!, raw);
+
   it('normalises Ghana phone numbers', () => {
-    expect(normalizeGhanaPhone('024 123 4567')).toBe('+233241234567');
-    expect(normalizeGhanaPhone('+233 24 123 4567')).toBe('+233241234567');
-    expect(normalizeGhanaPhone('233201234567')).toBe('+233201234567');
-    expect(normalizeGhanaPhone('12345')).toBeNull();
-    expect(normalizeGhanaPhone('+79161234567')).toBeNull();
+    expect(phone('GH', '024 123 4567')).toBe('+233241234567');
+    expect(phone('GH', '+233 24 123 4567')).toBe('+233241234567');
+    expect(phone('GH', '233201234567')).toBe('+233201234567');
+    expect(phone('GH', '12345')).toBeNull();
+    expect(phone('GH', '+79161234567')).toBeNull();
   });
+
+  it('normalises Nigerian and CEMAC phone numbers', () => {
+    expect(phone('NG', '0803 123 4567')).toBe('+2348031234567');
+    expect(phone('NG', '+234 803 123 4567')).toBe('+2348031234567');
+    expect(phone('NG', '0603 123 4567')).toBeNull();
+    expect(phone('CM', '6 71 23 45 67')).toBe('+237671234567');
+    expect(phone('CM', '00237 671234567')).toBe('+237671234567');
+    expect(phone('CM', '571234567')).toBeNull();
+    expect(phone('CG', '06 123 4567')).toBe('+242061234567');
+    expect(phone('TD', '+235 66 12 34 56')).toBe('+23566123456');
+  });
+
+  it('applies country rules for the receive currency', () => {
+    const base = { recipientName: 'Ada Obi', payoutMethod: 'bank_transfer', bankName: 'GTBank' };
+    const ng = validateRecipient({ ...base, recipientCountry: 'NG', recipientPhone: '08031234567', bankAccountNumber: '0123456789' }, 'NGN');
+    expect(ng).toMatchObject({ recipientCountry: 'NG', recipientPhone: '+2348031234567' });
+    // NUBAN must be exactly 10 digits.
+    expect(() => validateRecipient({ ...base, recipientCountry: 'NG', recipientPhone: '08031234567', bankAccountNumber: '12345678' }, 'NGN')).toThrow();
+    // A Ghana recipient cannot be paid in naira.
+    expect(() => validateRecipient({ ...base, recipientCountry: 'GH', recipientPhone: '0241234567', bankAccountNumber: '0123456789' }, 'NGN')).toThrow();
+    const cm = validateRecipient(
+      { recipientName: 'Jean Mbarga', recipientCountry: 'CM', recipientPhone: '671234567', payoutMethod: 'mobile_money', mobileMoneyProvider: 'Orange Money' },
+      'XAF',
+    );
+    expect(cm).toMatchObject({ recipientCountry: 'CM', mobileMoneyProvider: 'Orange Money' });
+    // Providers are per country.
+    expect(() =>
+      validateRecipient({ recipientName: 'Jean Mbarga', recipientCountry: 'CM', recipientPhone: '671234567', payoutMethod: 'mobile_money', mobileMoneyProvider: 'MTN MoMo' }, 'XAF'),
+    ).toThrow();
+  });
+
+  it('rounds XAF to whole francs', () => {
+    const r = calculateQuote({ sendAmount: '10000', rate: '7.1234', feeRate: '0.007', sendCurrency: 'RUB', receiveCurrency: 'XAF' });
+    // 71234.00 gross; fee 498.638 → 499; payout 70735
+    expect(r).toMatchObject({ grossAmount: '71234', feeAmount: '499', payoutAmount: '70735' });
+  });
+
   it('reports every invalid field', () => {
     try {
-      validateRecipient({ payoutMethod: 'bank_transfer', bankAccountNumber: 'abc', customerEmail: 'nope' });
+      validateRecipient({ payoutMethod: 'bank_transfer', bankAccountNumber: 'abc', customerEmail: 'nope', recipientCountry: 'GH' }, 'GHS');
       expect.unreachable();
     } catch (err) {
       expect(Object.keys((err as { details: object }).details).sort()).toEqual(

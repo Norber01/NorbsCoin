@@ -123,6 +123,44 @@ describe('rates and quotes', () => {
   });
 });
 
+describe('additional corridors', () => {
+  beforeEach(resetDb);
+
+  it('keeps NGN and XAF disabled until enabled, then quotes and orders with local rules', async () => {
+    const ctx = makeApp();
+    await configureCorridor();
+    expect((await ctx.request.post('/api/quotes').send({ from: 'RUB', to: 'XAF', sendAmount: '10000' })).status).toBe(503);
+    const cfg0 = await ctx.request.get('/api/config');
+    expect(cfg0.body.corridors.map((c: { to: string }) => c.to)).toEqual(['GHS']);
+
+    const { rows } = await pool.query(`UPDATE corridors SET enabled = TRUE WHERE to_currency = 'XAF' RETURNING id`);
+    await pool.query(`INSERT INTO payment_instructions (corridor_id, method_label, instructions) VALUES ($1, 'Card', 'Pay to card 0000')`, [rows[0].id]);
+    ctx.provider.rate = '7.1234';
+    await ctx.rates.refresh('RUB', 'XAF');
+    const cfg = await ctx.request.get('/api/config');
+    expect(cfg.body.payoutCountries.XAF.map((c: { code: string }) => c.code)).toContain('CM');
+    const quote = await ctx.request.post('/api/quotes').send({ from: 'RUB', to: 'XAF', sendAmount: '10000' });
+    expect(quote.body.quote).toMatchObject({ grossAmount: '71234', feeAmount: '499', payoutAmount: '70735' });
+
+    const recipient = {
+      recipientName: 'Jean Mbarga',
+      recipientCountry: 'CM',
+      recipientPhone: '6 71 23 45 67',
+      payoutMethod: 'mobile_money',
+      mobileMoneyProvider: 'MTN Mobile Money',
+    };
+    const tv = cfg.body.settings.terms_version;
+    const ghanaian = await ctx.request
+      .post('/api/orders')
+      .send({ quoteId: quote.body.quote.id, termsAccepted: true, termsVersion: tv, recipient: RECIPIENT });
+    expect(ghanaian.body.error.details.recipientCountry).toBeTruthy();
+    const order = await ctx.request.post('/api/orders').send({ quoteId: quote.body.quote.id, termsAccepted: true, termsVersion: tv, recipient });
+    expect(order.status).toBe(201);
+    const { rows: o } = await pool.query('SELECT recipient_country, recipient_phone, receive_currency FROM orders WHERE reference = $1', [order.body.reference]);
+    expect(o[0]).toEqual({ recipient_country: 'CM', recipient_phone: '+237671234567', receive_currency: 'XAF' });
+  });
+});
+
 describe('order lifecycle', () => {
   beforeEach(resetDb);
 

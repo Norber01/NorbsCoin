@@ -1,6 +1,7 @@
 # NorbsCoin
 
-A currency exchange **order platform** for exchanging Russian rubles (RUB) for Ghanaian cedis (GHS).
+A currency exchange **order platform** for exchanging Russian rubles (RUB) for Ghanaian cedis (GHS),
+Nigerian naira (NGN) and Central African CFA francs (XAF).
 Customers get a firm, transparent quote, submit payment evidence and track their order privately.
 Operators independently verify incoming funds, make the payout manually, and account for every
 transaction from one dashboard.
@@ -8,6 +9,19 @@ transaction from one dashboard.
 > This software does not move money. Payment confirmation and payouts are manual by design for the
 > first release. Before operating live, read [docs/OPERATIONS.md](docs/OPERATIONS.md), especially the
 > legal and compliance section.
+
+## Currencies
+
+| Corridor | Payout countries | Default |
+| --- | --- | --- |
+| RUB → GHS | Ghana (MTN MoMo, Telecel Cash, AirtelTigo Money, banks) | enabled |
+| RUB → NGN | Nigeria (OPay, PalmPay, Moniepoint, Paga, MTN MoMo PSB, banks — 10-digit NUBAN) | disabled |
+| RUB → XAF | Cameroon, Gabon, Republic of the Congo, Chad, Central African Republic, Equatorial Guinea (MTN, Orange, Airtel, Moov where available, banks) | disabled |
+| GHS → RUB | — | disabled |
+
+Disabled corridors are switched on in **Settings → Enable corridor** once you have a rate, payment
+instructions and a working way to pay out. XAF has no minor unit, so XAF amounts are whole francs.
+Country rules (phone formats, providers, account formats) live in `server/src/domain/countries.ts`.
 
 ## What's in the first release
 
