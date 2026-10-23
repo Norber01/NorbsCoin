@@ -42,5 +42,5 @@ No card, no computer and no command line are needed. Everything is set up by `re
   still sees their private tracking link on screen after confirming.
 - **Security:** after your first sign-in you can delete `BOOTSTRAP_OWNER_PASSWORD` in the service's
   **Environment** tab. It is only used when no operator account exists yet.
-- **Updates:** Render redeploys automatically when new code is pushed to the deployed branch.
+- **Updates:** Render redeploys automatically when changes are merged into `main`.
 - **Do not use this free test deployment for real customers' money.** See `docs/OPERATIONS.md`.

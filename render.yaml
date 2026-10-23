@@ -22,7 +22,7 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    branch: ccr-ce1dcded-hu6um4
+    branch: main
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
